@@ -1,1 +1,515 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sudoku — Volledig Interactief</title>
+  <style>
+    :root {
+      --bg: #0f172a;          /* slate-900 */
+      --panel: #111827;       /* gray-900 */
+      --panel-2: #1f2937;     /* gray-800 */
+      --text: #e5e7eb;        /* gray-200 */
+      --muted: #94a3b8;       /* slate-400 */
+      --accent: #60a5fa;      /* blue-400 */
+      --accent-2: #22d3ee;    /* cyan-400 */
+      --bad: #ef4444;         /* red-500 */
+      --ok: #22c55e;          /* green-500 */
+      --warn: #f59e0b;        /* amber-500 */
+      --given: #cbd5e1;       /* slate-300 */
+      --grid: #334155;        /* slate-600 */
+      --grid-strong: #cbd5e1; /* slate-300 */
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text); background: radial-gradient(1200px 800px at 20% -10%, #1e293b, #0b1222), var(--bg);
+      display: grid; place-items: center; padding: 16px;
+    }
+    .app {
+      width: min(1100px, 96vw);
+      display: grid; grid-template-columns: 1fr 340px; gap: 18px;
+    }
+    @media (max-width: 980px){ .app { grid-template-columns: 1fr; } }
+
+    .card { background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+            backdrop-filter: blur(6px);
+    }
+    .board-wrap { padding: 14px; }
+
+    .board {
+      width: min(78vmin, 720px); aspect-ratio: 1 / 1; margin: 0 auto;
+      display: grid; grid-template-columns: repeat(9, 1fr); grid-template-rows: repeat(9, 1fr);
+      background: var(--panel); border-radius: 12px; overflow: hidden; position: relative;
+      border: 2px solid var(--grid-strong);
+    }
+    .cell {
+      position: relative; border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid);
+      display: grid; place-items: center; font-weight: 600; cursor: pointer; user-select: none;
+      transition: background 120ms ease, color 120ms ease, transform 80ms;
+      font-size: clamp(16px, 3.2vmin, 28px);
+    }
+    .cell:nth-child(9n) { border-right: none; }
+    .cell:nth-child(n+73) { border-bottom: none; }
+
+    /* bold 3x3 borders */
+    .cell[data-r="2"], .cell[data-r="5"] { border-bottom: 2px solid var(--grid-strong)!important; }
+    .cell[data-c="2"], .cell[data-c="5"] { border-right: 2px solid var(--grid-strong)!important; }
+
+    .given { color: var(--given); }
+    .selected { background: rgba(96, 165, 250, 0.18); }
+    .peer { background: rgba(148, 163, 184, 0.10); }
+    .same { color: var(--accent-2); text-shadow: 0 0 8px rgba(34, 211, 238, 0.35); }
+    .conflict { background: rgba(239, 68, 68, 0.18)!important; }
+    .shake { animation: shake 220ms linear; }
+    @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px);} 75% { transform: translateX(3px);} }
+
+    .notes { position: absolute; inset: 2px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 1px; font-size: clamp(8px, 1.4vmin, 12px); color: var(--muted); pointer-events: none; }
+    .note { display: grid; place-items: center; opacity: 0.9; }
+
+    .side { padding: 16px; display: grid; gap: 14px; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .title { font-size: 20px; font-weight: 700; letter-spacing: 0.2px; }
+
+    .btn { background: var(--panel-2); border: 1px solid rgba(255,255,255,0.08); color: var(--text);
+           border-radius: 12px; padding: 12px 14px; cursor: pointer; font-weight: 600; transition: transform 80ms, background 120ms, border 120ms; }
+    .btn:hover { background: #273244; }
+    .btn:active { transform: translateY(1px); }
+    .btn.primary { background: linear-gradient(135deg, rgba(96,165,250,0.25), rgba(34,211,238,0.18)); border: 1px solid rgba(96,165,250,0.4); }
+    .btn.warn { background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(245,158,11,0.08)); border: 1px solid rgba(245,158,11,0.35); }
+    .btn.danger { background: linear-gradient(135deg, rgba(239,68,68,0.18), rgba(239,68,68,0.08)); border: 1px solid rgba(239,68,68,0.35); }
+
+    .numpad { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .num { padding: 16px 0; border-radius: 12px; font-size: 18px; font-weight: 800; text-align: center; background: #1e293b; border: 1px solid rgba(255,255,255,0.08); cursor: pointer; }
+    .num:hover { background: #233149; }
+    .num.active { outline: 2px solid var(--accent); }
+
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stat { background: var(--panel-2); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 10px; text-align: center; }
+    .stat label { display:block; font-size: 12px; color: var(--muted); }
+    .stat strong { font-size: 18px; }
+
+    .footer { text-align: center; color: var(--muted); font-size: 12px; padding: 2px 0 8px; }
+    a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card board-wrap">
+      <div class="board" id="board" aria-label="Sudoku bord" role="grid"></div>
+    </div>
+
+    <aside class="card side" aria-label="Bediening">
+      <div class="title">Sudoku</div>
+      <div class="row">
+        <button class="btn primary" id="newEasy">Nieuwe puzzel (Makkelijk)</button>
+        <button class="btn primary" id="newHard">Nieuwe puzzel (Moeilijk)</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="undoBtn" title="Ongedaan maken">↶ Undo</button>
+        <button class="btn" id="redoBtn" title="Opnieuw">↷ Redo</button>
+        <button class="btn warn" id="noteToggle" title="Notitiemodus">📝 Notities: <span id="noteState">UIT</span></button>
+        <button class="btn" id="hintBtn" title="Hint (vult een logische kandidaat)">💡 Hint</button>
+      </div>
+
+      <div class="numpad" id="numpad" aria-label="Numpad voor invoer">
+        <div class="num" data-n="1">1</div>
+        <div class="num" data-n="2">2</div>
+        <div class="num" data-n="3">3</div>
+        <div class="num" data-n="4">4</div>
+        <div class="num" data-n="5">5</div>
+        <div class="num" data-n="6">6</div>
+        <div class="num" data-n="7">7</div>
+        <div class="num" data-n="8">8</div>
+        <div class="num" data-n="9">9</div>
+        <div class="num" data-n="E">⌫</div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><label>Tijd</label><strong id="time">00:00</strong></div>
+        <div class="stat"><label>Fouten</label><strong id="mistakes">0</strong></div>
+        <div class="stat"><label>Veld</label><strong id="sel">—</strong></div>
+      </div>
+
+      <div class="row">
+        <select class="btn" id="puzzleSelect" title="Kies puzzel">
+          <option value="easy-0">Voorbeeld Easy #1</option>
+          <option value="easy-1">Voorbeeld Easy #2</option>
+          <option value="hard-0">Voorbeeld Hard #1</option>
+          <option value="hard-1">Voorbeeld Hard #2</option>
+        </select>
+        <button class="btn" id="loadSelected">Laden</button>
+        <button class="btn danger" id="resetBtn">Reset</button>
+      </div>
+      <div class="footer">Gemaakt voor je — volledig client-side. Sleep dit HTML-bestand naar je hosting en klaar. ✨</div>
+    </aside>
+  </div>
+
+  <script>
+  // ======= Utility helpers =======
+  const byId = (id) => document.getElementById(id);
+  const boardEl = byId('board');
+  const numpadEl = byId('numpad');
+  const timeEl = byId('time');
+  const mistakesEl = byId('mistakes');
+  const selEl = byId('sel');
+  const noteToggle = byId('noteToggle');
+  const noteState = byId('noteState');
+  const undoBtn = byId('undoBtn');
+  const redoBtn = byId('redoBtn');
+
+  // ======= Game State =======
+  const State = {
+    puzzle: new Array(81).fill(0),   // given numbers (0 = empty)
+    fixed:  new Array(81).fill(false),
+    grid:   new Array(81).fill(0),   // current numbers (0 = empty)
+    notes:  Array.from({length:81}, () => new Set()),
+    selected: -1,
+    noteMode: false,
+    mistakes: 0,
+    timerStart: null,
+    elapsed: 0,
+    history: [],
+    future: [],
+  };
+
+  // ======= Puzzles (81-char strings, 0 = empty) =======
+  const PUZZLES = {
+    easy: [
+      // Easy #1
+      '530070000600195000098000060800060003400803001700020006060000280000419005000080079',
+      // Easy #2
+      '200080300060070084030500209000105408000000000402706000301007040720040060004010003',
+    ],
+    hard: [
+      // Hard #1
+      '000000907000420180000705026100904000050000040000507009920108000034059000507000000',
+      // Hard #2
+      '005300000800000020070010500400005300010070006003200004060000050000040000000000000',
+    ]
+  };
+
+  // ======= Build Board =======
+  function buildBoard(){
+    boardEl.innerHTML = '';
+    for(let r=0; r<9; r++){
+      for(let c=0; c<9; c++){
+        const i = r*9+c;
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.i = i; cell.dataset.r = r; cell.dataset.c = c; cell.dataset.b = boxIndex(r,c);
+        cell.setAttribute('role','gridcell'); cell.setAttribute('aria-label', `R${r+1} C${c+1}`);
+        cell.addEventListener('click', () => selectCell(i));
+        const notes = document.createElement('div'); notes.className = 'notes';
+        for(let n=1; n<=9; n++){ const s=document.createElement('div'); s.className='note'; s.textContent=n; notes.appendChild(s);}        
+        cell.appendChild(notes);
+        boardEl.appendChild(cell);
+      }
+    }
+  }
+
+  // ======= Helpers for indices =======
+  const rowColOf = (i) => [Math.floor(i/9), i%9];
+  const boxIndex = (r, c) => Math.floor(r/3)*3 + Math.floor(c/3);
+
+  // ======= Rendering =======
+  function render(){
+    for(let i=0; i<81; i++){
+      const cell = boardEl.children[i];
+      const v = State.grid[i];
+      cell.classList.toggle('given', State.fixed[i]);
+      cell.textContent = v ? v : '';
+      cell.querySelector('.notes').style.display = v ? 'none' : 'grid';
+      const notesSet = State.notes[i];
+      // update notes visibility
+      const children = cell.querySelector('.notes').children;
+      for(let n=1; n<=9; n++){
+        children[n-1].style.opacity = notesSet.has(n) ? 1 : 0;
+      }
+      // base classes
+      cell.classList.remove('selected', 'peer', 'same', 'conflict');
+    }
+
+    // highlights
+    if(State.selected !== -1){
+      const [sr, sc] = rowColOf(State.selected);
+      for(let i=0; i<81; i++){
+        const cell = boardEl.children[i];
+        const [r,c] = rowColOf(i);
+        if(r===sr || c===sc || boxIndex(r,c)===boxIndex(sr,sc)) cell.classList.add('peer');
+      }
+      boardEl.children[State.selected].classList.add('selected');
+
+      const val = State.grid[State.selected];
+      if(val){
+        for(let i=0; i<81; i++) if(State.grid[i]===val) boardEl.children[i].classList.add('same');
+      }
+
+      selEl.textContent = `R${sr+1}C${sc+1}`;
+    } else {
+      selEl.textContent = '—';
+    }
+
+    // conflicts display (for temporary visualizing peers with same value)
+    const conflicts = computeConflicts();
+    conflicts.forEach(i => boardEl.children[i].classList.add('conflict'));
+
+    // UI bits
+    mistakesEl.textContent = State.mistakes;
+    noteState.textContent = State.noteMode ? 'AAN' : 'UIT';
+  }
+
+  function computeConflicts(){
+    const bad = new Set();
+    // rows
+    for(let r=0; r<9; r++){
+      const seen = {};
+      for(let c=0; c<9; c++){
+        const i = r*9+c; const v = State.grid[i]; if(!v) continue; 
+        if(seen[v] !== undefined){ bad.add(i); bad.add(seen[v]); } else seen[v]=i;
+      }
+    }
+    // cols
+    for(let c=0; c<9; c++){
+      const seen = {};
+      for(let r=0; r<9; r++){
+        const i = r*9+c; const v = State.grid[i]; if(!v) continue; 
+        if(seen[v] !== undefined){ bad.add(i); bad.add(seen[v]); } else seen[v]=i;
+      }
+    }
+    // boxes
+    for(let br=0; br<3; br++) for(let bc=0; bc<3; bc++){
+      const seen={};
+      for(let dr=0; dr<3; dr++) for(let dc=0; dc<3; dc++){
+        const r = br*3+dr, c = bc*3+dc, i=r*9+c; const v=State.grid[i]; if(!v) continue;
+        if(seen[v] !== undefined){ bad.add(i); bad.add(seen[v]); } else seen[v]=i;
+      }
+    }
+    return bad;
+  }
+
+  // ======= Selection =======
+  function selectCell(i){
+    if(State.fixed[i]){ State.selected = i; render(); return; }
+    State.selected = i;
+    render();
+  }
+
+  // ======= Candidates =======
+  function candidatesAt(i){
+    if(State.grid[i]) return new Set();
+    const [r,c] = rowColOf(i);
+    const used = new Set();
+    for(let k=0;k<9;k++){ used.add(State.grid[r*9+k]); used.add(State.grid[k*9+c]); }
+    const br = Math.floor(r/3)*3, bc=Math.floor(c/3)*3;
+    for(let dr=0; dr<3; dr++) for(let dc=0; dc<3; dc++) used.add(State.grid[(br+dr)*9+(bc+dc)]);
+    const out = new Set();
+    for(let n=1;n<=9;n++) if(!used.has(n)) out.add(n);
+    return out;
+  }
+
+  function recomputeAllNotes(){
+    for(let i=0;i<81;i++){
+      if(State.grid[i]===0){ State.notes[i] = candidatesAt(i); }
+      else { State.notes[i].clear(); }
+    }
+  }
+
+  // ======= Moves, Undo/Redo =======
+  function pushHistory(action){
+    State.history.push(action); State.future.length = 0; // clear redo stack
+  }
+  function doSetNumber(i, n){
+    const prev = State.grid[i];
+    // Disallow changing given cells
+    if(State.fixed[i]) return false;
+    if(n===0){
+      pushHistory({type:'set', i, from: prev, to: 0, notesBefore: new Set(State.notes[i])});
+      State.grid[i] = 0;
+      return true;
+    }
+    // Validate legality
+    if(!isLegal(i, n)){
+      State.mistakes++;
+      flashIllegal(i);
+      return false;
+    }
+    pushHistory({type:'set', i, from: prev, to: n, notesBefore: new Set(State.notes[i])});
+    State.grid[i] = n;
+    State.notes[i].clear();
+    return true;
+  }
+
+  function isLegal(i, n){
+    const [r,c] = rowColOf(i);
+    for(let k=0;k<9;k++){ if(State.grid[r*9+k]===n) return false; if(State.grid[k*9+c]===n) return false; }
+    const br = Math.floor(r/3)*3, bc=Math.floor(c/3)*3;
+    for(let dr=0; dr<3; dr++) for(let dc=0; dc<3; dc++) if(State.grid[(br+dr)*9+(bc+dc)]===n) return false;
+    return true;
+  }
+
+  function flashIllegal(i){
+    const cell = boardEl.children[i];
+    cell.classList.add('shake');
+    setTimeout(()=>cell.classList.remove('shake'), 250);
+  }
+
+  function undo(){
+    const a = State.history.pop(); if(!a) return;
+    State.future.push(a);
+    if(a.type==='set'){
+      State.grid[a.i] = a.from;
+      State.notes[a.i] = new Set(a.notesBefore);
+    }
+    render();
+  }
+  function redo(){
+    const a = State.future.pop(); if(!a) return;
+    State.history.push(a);
+    if(a.type==='set'){
+      State.grid[a.i] = a.to;
+      if(a.to!==0) State.notes[a.i].clear();
+    }
+    render();
+  }
+
+  // ======= Interactions =======
+  numpadEl.addEventListener('click', (e) => {
+    const key = e.target.closest('.num'); if(!key) return;
+    const v = key.dataset.n;
+    if(State.selected===-1) return;
+    if(v==='E'){ // erase
+      if(doSetNumber(State.selected, 0)) { recomputeAllNotes(); render(); checkWin(); }
+      return;
+    }
+    const n = parseInt(v,10);
+    if(State.noteMode){
+      if(State.fixed[State.selected]) return;
+      if(State.grid[State.selected]!==0) return; // can't note in filled cell
+      if(State.notes[State.selected].has(n)) State.notes[State.selected].delete(n); else State.notes[State.selected].add(n);
+      render();
+    } else {
+      if(doSetNumber(State.selected, n)) { recomputeAllNotes(); render(); checkWin(); }
+    }
+  });
+
+  noteToggle.addEventListener('click', () => { State.noteMode = !State.noteMode; render(); });
+  undoBtn.addEventListener('click', undo);
+  redoBtn.addEventListener('click', redo);
+
+  // Disable keyboard number entry to stick with on-screen controls
+  window.addEventListener('keydown', (e) => {
+    const allowed = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'];
+    if(allowed.includes(e.key)){
+      if(State.selected===-1) return;
+      e.preventDefault();
+      const [r,c] = rowColOf(State.selected);
+      if(e.key==='ArrowUp' && r>0) selectCell((r-1)*9+c);
+      if(e.key==='ArrowDown' && r<8) selectCell((r+1)*9+c);
+      if(e.key==='ArrowLeft' && c>0) selectCell(r*9+(c-1));
+      if(e.key==='ArrowRight' && c<8) selectCell(r*9+(c+1));
+      return;
+    }
+    // prevent number typing
+    if(/^[1-9]$/.test(e.key)){ e.preventDefault(); }
+  });
+
+  // ======= Timer =======
+  function startTimer(){
+    State.timerStart = Date.now();
+    clearInterval(window._tick);
+    window._tick = setInterval(()=>{
+      const t = Math.floor((Date.now()-State.timerStart + State.elapsed)/1000);
+      const m = String(Math.floor(t/60)).padStart(2,'0');
+      const s = String(t%60).padStart(2,'0');
+      timeEl.textContent = `${m}:${s}`;
+    }, 250);
+  }
+  function stopTimer(){ clearInterval(window._tick); }
+
+  // ======= Win Check =======
+  function checkWin(){
+    for(let i=0;i<81;i++) if(State.grid[i]===0) return false;
+    if(computeConflicts().size===0){
+      stopTimer();
+      setTimeout(()=> alert(`🎉 Gefeliciteerd! Opgelost in ${timeEl.textContent} met ${State.mistakes} fouten.`), 50);
+      return true;
+    }
+    return false;
+  }
+
+  // ======= Hints (simple single-candidate fill) =======
+  const hintBtn = byId('hintBtn');
+  hintBtn.addEventListener('click', () => {
+    // find a cell with exactly 1 candidate
+    recomputeAllNotes();
+    for(let i=0;i<81;i++){
+      if(State.grid[i]===0){
+        const cand = candidatesAt(i);
+        if(cand.size===1){
+          const [n] = cand; // only entry
+          doSetNumber(i, n);
+          State.selected = i;
+          recomputeAllNotes();
+          render();
+          checkWin();
+          return;
+        }
+      }
+    }
+    // If none, politely shake selected or board
+    boardEl.classList.add('shake'); setTimeout(()=>boardEl.classList.remove('shake'),250);
+  });
+
+  // ======= Load/Reset =======
+  function loadPuzzle(str){
+    // str: 81 chars
+    State.puzzle = Array.from(str).map(ch=>parseInt(ch,10)||0);
+    State.grid = State.puzzle.slice();
+    State.fixed = State.puzzle.map(v=>v!==0);
+    State.notes = Array.from({length:81}, () => new Set());
+    State.selected = -1; State.mistakes = 0; State.history = []; State.future = [];
+    State.elapsed = 0; startTimer();
+    recomputeAllNotes();
+    render();
+  }
+  function resetPuzzle(){
+    State.grid = State.puzzle.slice();
+    State.notes = Array.from({length:81}, () => new Set());
+    State.selected = -1; State.mistakes = 0; State.history = []; State.future = [];
+    State.elapsed = 0; startTimer();
+    recomputeAllNotes();
+    render();
+  }
+
+  // Buttons for new puzzles
+  byId('newEasy').addEventListener('click', ()=>{
+    const s = PUZZLES.easy[Math.floor(Math.random()*PUZZLES.easy.length)];
+    loadPuzzle(s);
+  });
+  byId('newHard').addEventListener('click', ()=>{
+    const s = PUZZLES.hard[Math.floor(Math.random()*PUZZLES.hard.length)];
+    loadPuzzle(s);
+  });
+
+  // Select/Load dropdown
+  const puzzleSelect = byId('puzzleSelect');
+  const loadSelected = byId('loadSelected');
+  loadSelected.addEventListener('click', () => {
+    const v = puzzleSelect.value;
+    const [diff, idx] = v.split('-');
+    loadPuzzle(PUZZLES[diff][parseInt(idx,10)]);
+  });
+
+  const resetBtn = byId('resetBtn');
+  resetBtn.addEventListener('click', resetPuzzle);
+
+  // ======= Init =======
+  buildBoard();
+  loadPuzzle(PUZZLES.easy[0]);
+  </script>
+</body>
+</html>
 
